@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -169,7 +169,7 @@ void ScrollContainer::_update_scrollbar_pos() {
 
 void ScrollContainer::_notification(int p_what) {
 
-	if (p_what == NOTIFICATION_ENTER_SCENE || p_what == NOTIFICATION_THEME_CHANGED) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
 
 		call_deferred("_update_scrollbar_pos");
 	};
@@ -195,11 +195,19 @@ void ScrollContainer::_notification(int p_what) {
 			Rect2 r = Rect2(-scroll,minsize);
 			if (!scroll_h) {
 				r.pos.x=0;
-				r.size.width=size.width;
+				if (c->get_h_size_flags()&SIZE_EXPAND)
+					r.size.width=MAX(size.width,minsize.width);
+				else
+					r.size.width=minsize.width;
 			}
 			if (!scroll_v) {
 				r.pos.y=0;
 				r.size.height=size.height;
+				if (c->get_v_size_flags()&SIZE_EXPAND)
+					r.size.height=MAX(size.height,minsize.height);
+				else
+					r.size.height=minsize.height;
+
 			}
 			fit_child_in_rect(c,r);
 		}
@@ -235,7 +243,7 @@ void ScrollContainer::_notification(int p_what) {
 				}
 
 				if (pos.y<0) {
-					pos.x=0;
+					pos.y=0;
 					turnoff_v=true;
 				}
 				if (pos.y > (v_scroll->get_max()-v_scroll->get_page())) {

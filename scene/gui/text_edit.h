@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -55,7 +55,7 @@ class TextEdit : public Control  {
 
 		Mode selecting_mode;
 		int selecting_line,selecting_column;
-		bool selecting_test;
+		bool selecting_text;
 
 
 		bool active;
@@ -63,6 +63,7 @@ class TextEdit : public Control  {
 		int from_line,from_column;
 		int to_line,to_column;
 
+		bool shiftclick_left;
 
 	} selection;
 
@@ -79,6 +80,7 @@ class TextEdit : public Control  {
 		Color mark_color;
 		Color breakpoint_color;
 		Color current_line_color;
+		Color brace_mismatch_color;
 
 		int row_height;
 		int line_spacing;
@@ -138,7 +140,7 @@ class TextEdit : public Control  {
 		int size() const { return text.size(); }
 		void clear();
 		void clear_caches();
-		_FORCE_INLINE_ const String& operator[](int p_line) const { return text[p_line].data; }
+        _FORCE_INLINE_ const String& operator[](int p_line) const { return text[p_line].data; }
 		Text() { tab_size=4; }
        };
 
@@ -162,7 +164,7 @@ class TextEdit : public Control  {
 	TextOperation current_op;
 
 	List<TextOperation> undo_stack;
-	List<TextOperation>::Element *undo_stack_pos;
+    List<TextOperation>::Element *undo_stack_pos;
 
 	void _clear_redo();
 	void _do_text_op(const TextOperation& p_op, bool p_reverse);
@@ -185,6 +187,8 @@ class TextEdit : public Control  {
 	int completion_index;
 	Rect2i completion_rect;
 	int completion_line_ofs;
+	String completion_hint;
+	int completion_hint_offset;
 
 	bool setting_text;
 
@@ -208,6 +212,8 @@ class TextEdit : public Control  {
 	bool line_numbers;
 	
 	bool auto_brace_completion_enabled;
+	bool brace_matching_enabled;
+	bool cut_copy_line;
 
 	uint64_t last_dblclk;
 
@@ -260,10 +266,11 @@ class TextEdit : public Control  {
 
 	void _clear();
 	void _cancel_completion();
+	void _cancel_code_hint();
 	void _confirm_completion();
 	void _update_completion_candidates();
 
-	bool _get_mouse_pos(const Point2i& p_mouse, int &r_row, int &r_col) const;
+	void _get_mouse_pos(const Point2i& p_mouse, int &r_row, int &r_col) const;
 
 protected:
 
@@ -298,6 +305,7 @@ public:
 
 	void set_text(String p_text);
 	void insert_text_at_cursor(const String& p_text);
+    void insert_at(const String& p_text, int at);
 	int get_line_count() const;
 	void set_line_as_marked(int p_line,bool p_marked);
 	void set_line_as_breakpoint(int p_line,bool p_breakpoint);
@@ -305,14 +313,19 @@ public:
 	void get_breakpoints(List<int> *p_breakpoints) const;
 	String get_text();
 	String get_line(int line) const;
+    void set_line(int line, String new_text);
 	void backspace_at_cursor();
 	
 	inline void set_auto_brace_completion(bool p_enabled) {
 		auto_brace_completion_enabled = p_enabled;
 	}
-	
-	void cursor_set_column(int p_col);
-	void cursor_set_line(int p_row);
+	inline void set_brace_matching(bool p_enabled) {
+		brace_matching_enabled=p_enabled;
+		update();
+	}
+
+	void cursor_set_column(int p_col, bool p_adjust_viewport=true);
+	void cursor_set_line(int p_row, bool p_adjust_viewport=true);
 
 	int cursor_get_column() const;
 	int cursor_get_line() const;
@@ -336,7 +349,7 @@ public:
 
 	bool is_selection_active() const;
 	int get_selection_from_line() const;
-	int get_selection_from_column() const;
+    int get_selection_from_column() const;
 	int get_selection_to_line() const;
 	int get_selection_to_column() const;
 	String get_selection_text() const;
@@ -373,10 +386,14 @@ public:
 
 	void set_tooltip_request_func(Object *p_obj, const StringName& p_function, const Variant& p_udata);
 
-	void set_completion(bool p_enabled,const Vector<String>& p_prefixes);
+	void set_completion(bool p_enabled,const Vector<String>& p_prefixes);	
 	void code_complete(const Vector<String> &p_strings);
+	void set_code_hint(const String& p_hint);
 	void query_code_comple();
 
+	String get_text_for_completion();
+
+    virtual bool is_text_field() const;
 	TextEdit();
 	~TextEdit();
 };

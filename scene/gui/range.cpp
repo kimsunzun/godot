@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -42,7 +42,7 @@ void Range::Shared::emit_value_changed() {
 
 	for (Set<Range*>::Element *E=owners.front();E;E=E->next()) {
 		Range *r=E->get();
-		if (!r->is_inside_scene())
+		if (!r->is_inside_tree())
 			continue;
 		r->_value_changed_notify();
 	}
@@ -59,7 +59,7 @@ void Range::Shared::emit_changed() {
 
 	for (Set<Range*>::Element *E=owners.front();E;E=E->next()) {
 		Range *r=E->get();
-		if (!r->is_inside_scene())
+		if (!r->is_inside_tree())
 			continue;
 		r->_changed_notify();
 	}
@@ -243,7 +243,7 @@ void Range::_bind_methods() {
 	ADD_PROPERTY( PropertyInfo( Variant::REAL, "range/step" ), _SCS("set_step"), _SCS("get_step") );
 	ADD_PROPERTY( PropertyInfo( Variant::REAL, "range/page" ), _SCS("set_page"), _SCS("get_page") );
 	ADD_PROPERTY( PropertyInfo( Variant::REAL, "range/value" ), _SCS("set_val"), _SCS("get_val") );
-	ADD_PROPERTY( PropertyInfo( Variant::REAL, "range/exp_edit" ), _SCS("set_exp_unit_value"), _SCS("is_unit_value_exp") );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "range/exp_edit" ), _SCS("set_exp_unit_value"), _SCS("is_unit_value_exp") );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "rounded_values" ), _SCS("set_rounded_values"), _SCS("get_rounded_values") );
 
 }

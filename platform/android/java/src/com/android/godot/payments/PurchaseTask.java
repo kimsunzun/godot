@@ -62,33 +62,13 @@ abstract public class PurchaseTask {
 //		Log.d("XXX", "Buy intent response code: " + responseCode);
 		if(responseCode == 1 || responseCode == 3 || responseCode == 4){
 			canceled();
-			return ;
-		}
-		if(responseCode == 7){
-			new ConsumeTask(mService, context) {
-				
-				@Override
-				protected void success(String ticket) {
-//					Log.d("XXX", "Product was erroniously purchased!");
-					if(isLooping){
-//						Log.d("XXX", "It is looping");
-						error("Error while purchasing product");
-						return;
-					}
-					isLooping=true;
-					PurchaseTask.this.purchase(sku, transactionId);
-					
-				}
-				
-				@Override
-				protected void error(String message) {
-					PurchaseTask.this.error(message);
-					
-				}
-			}.consume(sku);
 			return;
 		}
-		
+		if(responseCode == 7){
+			alreadyOwned();
+			return;
+		}
+			
 		
 		PendingIntent pendingIntent = buyIntentBundle.getParcelable("BUY_INTENT");
 		pc.setConsumableValue("validation_hash", sku, hash);
@@ -116,6 +96,6 @@ abstract public class PurchaseTask {
 
 	abstract protected void error(String message);
 	abstract protected void canceled();
-
+	abstract protected void alreadyOwned();
 	
 }

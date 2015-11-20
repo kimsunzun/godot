@@ -1,4 +1,3 @@
-
 Import('env')
 
 sources = [
@@ -32,6 +31,5 @@ sources = [
 	"theora/video_stream_theora.cpp",
 ]
 
-env.drivers_sources += sources
-
-
+if env['use_theoraplayer_binary'] != "yes":
+	env.drivers_sources += sources

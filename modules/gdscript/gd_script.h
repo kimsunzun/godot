@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,6 +37,8 @@
 class GDInstance;
 class GDScript;
 
+
+
 class GDFunction {
 public:
 
@@ -58,6 +60,9 @@ public:
 		OPCODE_CALL_BUILT_IN,
 		OPCODE_CALL_SELF,
 		OPCODE_CALL_SELF_BASE,
+		OPCODE_YIELD,
+		OPCODE_YIELD_SIGNAL,
+		OPCODE_YIELD_RESUME,
 		OPCODE_JUMP,
 		OPCODE_JUMP_IF,
 		OPCODE_JUMP_IF_NOT,
@@ -124,6 +129,10 @@ friend class GDCompiler;
 	const char*_func_cname;
 #endif
 
+#ifdef TOOLS_ENABLED
+	Vector<StringName> arg_names;
+#endif
+
 	List<StackDebug> stack_debug;
 
 	_FORCE_INLINE_ Variant *_get_variant(int p_address,GDInstance *p_instance,GDScript *p_script,Variant &self,Variant *p_stack,String& r_error) const;
@@ -132,6 +141,20 @@ friend class GDCompiler;
 
 public:
 
+	struct CallState {
+
+		GDInstance *instance;
+		Vector<uint8_t> stack;
+		int stack_size;
+		Variant self;
+		uint32_t alloca_size;
+		GDScript *_class;
+		int ip;
+		int line;
+		int defarg;
+		Variant result;
+
+	};
 
 	_FORCE_INLINE_ bool is_static() const { return _static; }
 
@@ -150,9 +173,40 @@ public:
 	_FORCE_INLINE_ bool is_empty() const { return _code_size==0; }
 
 	int get_argument_count() const { return _argument_count; }
-	Variant call(GDInstance *p_instance,const Variant **p_args, int p_argcount,Variant::CallError& r_err);
+	StringName get_argument_name(int p_idx) const {
+#ifdef TOOLS_ENABLED
+		ERR_FAIL_INDEX_V(p_idx,arg_names.size(),StringName());
+		return arg_names[p_idx];
+#endif
+		return StringName();
+
+	}
+	Variant get_default_argument(int p_idx) const {
+		ERR_FAIL_INDEX_V(p_idx,default_arguments.size(),Variant());
+		return default_arguments[p_idx];
+	}
+
+	Variant call(GDInstance *p_instance,const Variant **p_args, int p_argcount,Variant::CallError& r_err,CallState *p_state=NULL);
 
 	GDFunction();
+};
+
+
+class GDFunctionState : public Reference {
+
+	OBJ_TYPE(GDFunctionState,Reference);
+friend class GDFunction;
+	GDFunction *function;
+	GDFunction::CallState state;
+	Variant _signal_callback(const Variant** p_args, int p_argcount, Variant::CallError& r_error);
+protected:
+	static void _bind_methods();
+public:
+
+	bool is_valid() const;
+	Variant resume(const Variant& p_arg=Variant());
+	GDFunctionState();
+	~GDFunctionState();
 };
 
 
@@ -183,10 +237,18 @@ class GDScript : public Script {
 	bool valid;
 
 
+	struct MemberInfo {
+		int index;
+		StringName setter;
+		StringName getter;
+	};
+
 friend class GDInstance;
 friend class GDFunction;
 friend class GDCompiler;
 friend class GDFunctions;
+friend class GDScriptLanguage;
+
 	Variant _static_ref; //used for static call
 	Ref<GDNativeClass> native;
 	Ref<GDScript> base;
@@ -196,11 +258,21 @@ friend class GDFunctions;
 	Set<StringName> members; //members are just indices to the instanced script.
 	Map<StringName,Variant> constants;
 	Map<StringName,GDFunction> member_functions;
-	Map<StringName,int> member_indices; //members are just indices to the instanced script.
+	Map<StringName,MemberInfo> member_indices; //members are just indices to the instanced script.
 	Map<StringName,Ref<GDScript> > subclasses;	
+	Map<StringName,Vector<StringName> > _signals;
 
 #ifdef TOOLS_ENABLED
+
 	Map<StringName,Variant> member_default_values;
+
+	List<PropertyInfo> members_cache;
+	Map<StringName,Variant> member_default_values_cache;
+	Ref<GDScript> base_cache;
+	Set<ObjectID> inheriters_cache;
+	bool source_changed_cache;
+	void _update_exports_values(Map<StringName,Variant>& values, List<PropertyInfo> &propnames);
+
 #endif
 	Map<StringName,PropertyInfo> member_info;
 
@@ -220,10 +292,13 @@ friend class GDFunctions;
 
 #ifdef TOOLS_ENABLED
 	Set<PlaceHolderScriptInstance*> placeholders;
-	void _update_placeholder(PlaceHolderScriptInstance *p_placeholder);
+	//void _update_placeholder(PlaceHolderScriptInstance *p_placeholder);
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder);
 #endif
 
+
+
+	bool _update_exports();
 
 protected:
 	bool _get(const StringName& p_name,Variant &r_ret) const;
@@ -236,6 +311,7 @@ protected:
 	static void _bind_methods();
 public:
 
+	bool is_valid() const { return valid; }
 
 	const Map<StringName,Ref<GDScript> >& get_subclasses() const { return subclasses; }
 	const Map<StringName,Variant >& get_constants() const { return constants; }
@@ -243,11 +319,14 @@ public:
 	const Map<StringName,GDFunction>& get_member_functions() const { return member_functions; }
 	const Ref<GDNativeClass>& get_native() const { return native; }
 
+	virtual bool has_script_signal(const StringName& p_signal) const;
+	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const;
+
 
 	bool is_tool() const { return tool; }
 	Ref<GDScript> get_base() const;
 
-	const Map<StringName,int>& debug_get_member_indices() const { return member_indices; }
+	const Map<StringName,MemberInfo>& debug_get_member_indices() const { return member_indices; }
 	const Map<StringName,GDFunction>& debug_get_member_functions() const; //this is debug only
 	StringName debug_get_member_by_index(int p_idx) const;
 
@@ -261,12 +340,16 @@ public:
 	virtual bool has_source_code() const;
 	virtual String get_source_code() const;
 	virtual void set_source_code(const String& p_code);
+	virtual void update_exports();
+
 	virtual Error reload();
 
 	virtual String get_node_type() const;
 	void set_script_path(const String& p_path) { path=p_path; } //because subclasses need a path too...
 	Error load_source_code(const String& p_path);
 	Error load_byte_code(const String& p_path);
+
+	Vector<uint8_t> get_as_byte_code() const;
 
 	virtual ScriptLanguage *get_language() const;
 
@@ -392,6 +475,19 @@ public:
     }
 
 
+	virtual Vector<StackInfo> debug_get_current_stack_info() {
+	    if (Thread::get_main_ID()!=Thread::get_caller_ID())
+		return Vector<StackInfo>();
+
+		Vector<StackInfo> csi;
+		csi.resize(_debug_call_stack_pos);
+		for(int i=0;i<_debug_call_stack_pos;i++) {
+			csi[_debug_call_stack_pos-i-1].line=_call_stack[i].line?*_call_stack[i].line:0;
+			csi[_debug_call_stack_pos-i-1].script=Ref<GDScript>(_call_stack[i].function->get_script());
+		}
+		return csi;
+	}
+
 	struct {
 
 		StringName _init;
@@ -429,7 +525,7 @@ public:
 	virtual bool has_named_classes() const;
 	virtual int find_function(const String& p_function,const String& p_code) const;
 	virtual String make_function(const String& p_class,const String& p_name,const StringArray& p_args) const;
-	virtual Error complete_keyword(const String& p_code, int p_line, const String& p_base_path,const String& p_keyword, List<String>* r_options);
+	virtual Error complete_code(const String& p_code, const String& p_base_path, Object*p_owner,List<String>* r_options,String& r_call_hint);
 	virtual void auto_indent_code(String& p_code,int p_from_line,int p_to_line) const;
 
 	/* DEBUGGER FUNCTIONS */
@@ -461,7 +557,7 @@ public:
 class ResourceFormatLoaderGDScript : public ResourceFormatLoader {
 public:
 
-	virtual RES load(const String &p_path,const String& p_original_path="");
+	virtual RES load(const String &p_path,const String& p_original_path="",Error *r_error=NULL);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String& p_type) const;
 	virtual String get_resource_type(const String &p_path) const;

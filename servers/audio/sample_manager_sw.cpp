@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,12 +38,8 @@ SampleManagerSW::~SampleManagerSW()
 
 RID SampleManagerMallocSW::sample_create(AS::SampleFormat p_format, bool p_stereo, int p_length) {
 
-	ERR_EXPLAIN("IMA-ADPCM and STEREO are not a valid combination for sample format.");
-	ERR_FAIL_COND_V( p_format == AS::SAMPLE_FORMAT_IMA_ADPCM && p_stereo,RID());
 	Sample *s = memnew( Sample );
 	int datalen = p_length;
-	if (p_stereo)
-		datalen*=2;
 	if (p_format==AS::SAMPLE_FORMAT_PCM16)
 		datalen*=2;
 	else if (p_format==AS::SAMPLE_FORMAT_IMA_ADPCM) {
@@ -53,6 +49,10 @@ RID SampleManagerMallocSW::sample_create(AS::SampleFormat p_format, bool p_stere
 		datalen/=2;
 		datalen+=4;
 	}
+
+	if (p_stereo)
+		datalen*=2;
+
 #define SAMPLE_EXTRA 16
 
 	s->data = memalloc(datalen+SAMPLE_EXTRA); //help the interpolator by allocating a little more..
@@ -135,16 +135,49 @@ void SampleManagerMallocSW::sample_set_data(RID p_sample, const DVector<uint8_t>
 
 
 	ERR_EXPLAIN("Sample buffer size does not match sample size.");
+	//print_line("len bytes: "+itos(s->length_bytes)+" bufsize: "+itos(buff_size));
 	ERR_FAIL_COND(s->length_bytes!=buff_size);
 	DVector<uint8_t>::Read buffer_r=p_buffer.read();
 	const uint8_t *src = buffer_r.ptr();
 	uint8_t *dst = (uint8_t*)s->data;
-	print_line("set data: "+itos(s->length_bytes));
+	//print_line("set data: "+itos(s->length_bytes));
 
 	for(int i=0;i<s->length_bytes;i++) {
 
 		dst[i]=src[i];
 	}
+
+	switch(s->format) {
+
+		case AS::SAMPLE_FORMAT_PCM8: {
+
+			if (s->stereo) {
+				dst[s->length]=dst[s->length-2];
+				dst[s->length+1]=dst[s->length-1];
+			} else {
+
+				dst[s->length]=dst[s->length-1];
+			}
+
+		} break;
+		case AS::SAMPLE_FORMAT_PCM16: {
+
+			if (s->stereo) {
+				dst[s->length]=dst[s->length-4];
+				dst[s->length+1]=dst[s->length-3];
+				dst[s->length+2]=dst[s->length-2];
+				dst[s->length+3]=dst[s->length-1];
+			} else {
+
+				dst[s->length]=dst[s->length-2];
+				dst[s->length+1]=dst[s->length-1];
+			}
+
+		} break;
+
+	}
+
+
 
 }
 

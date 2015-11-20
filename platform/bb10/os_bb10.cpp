@@ -195,9 +195,10 @@ void OSBB10::finalize() {
 //		memdelete(debugger_connection_console);
 //}
 
+	memdelete(sample_manager);
+
 	audio_server->finish();
 	memdelete(audio_server);
-	memdelete(sample_manager);
 
 	visual_server->finish();
 	memdelete(visual_server);
@@ -619,7 +620,7 @@ OSBB10::OSBB10() {
 	printf("godot bb10!\n");
 	getcwd(launch_dir, sizeof(launch_dir));
 	printf("launch dir %s\n", launch_dir);
-	chdir("app/native/assets");
+	chdir("app/native");
 	launch_dir_ptr = launch_dir;
 }
 

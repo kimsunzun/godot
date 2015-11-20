@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,27 +28,40 @@
 /*************************************************************************/
 #include "ip_unix.h"
 
-#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED) && !defined(WINRT_ENABLED)
 
 
 #ifdef WINDOWS_ENABLED
-#define WINVER 0x0600
-#include <ws2tcpip.h>
-#include <winsock2.h>
-#include <windows.h>
-#include <stdio.h>
-#include <iphlpapi.h>
+ #ifdef WINRT_ENABLED
+  #include <ws2tcpip.h>
+  #include <winsock2.h>
+  #include <windows.h>
+  #include <stdio.h>
+ #else
+  #define WINVER 0x0600
+  #include <ws2tcpip.h>
+  #include <winsock2.h>
+  #include <windows.h>
+  #include <stdio.h>
+  #include <iphlpapi.h>
+ #endif
 #else
-#include <netdb.h>
-#ifdef ANDROID_ENABLED
-#include "platform/android/ifaddrs_android.h"
-#else
-#include <ifaddrs.h>
+ #include <netdb.h>
+ #ifdef ANDROID_ENABLED
+  #include "platform/android/ifaddrs_android.h"
+ #else
+  #ifdef __FreeBSD__
+   #include <sys/types.h>
+  #endif
+  #include <ifaddrs.h>
+ #endif
+ #include <arpa/inet.h>
+ #include <sys/socket.h>
+ #ifdef __FreeBSD__
+  #include <netinet/in.h>
+ #endif
 #endif
-#include <arpa/inet.h>
-#include <sys/socket.h>
 
-#endif
 IP_Address IP_Unix::_resolve_hostname(const String& p_hostname) {
 
 	struct hostent *he;
@@ -65,6 +78,14 @@ IP_Address IP_Unix::_resolve_hostname(const String& p_hostname) {
 }
 
 #if defined(WINDOWS_ENABLED)
+
+#if defined(WINRT_ENABLED)
+
+void IP_Unix::get_local_addresses(List<IP_Address> *r_addresses) const {
+
+
+};
+#else
 
 void IP_Unix::get_local_addresses(List<IP_Address> *r_addresses) const {
 
@@ -119,6 +140,7 @@ void IP_Unix::get_local_addresses(List<IP_Address> *r_addresses) const {
 	memfree(addrs);
 };
 
+#endif
 
 #else
 
@@ -130,6 +152,8 @@ void IP_Unix::get_local_addresses(List<IP_Address> *r_addresses) const {
 	getifaddrs(&ifAddrStruct);
 
 	for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+		if (!ifa->ifa_addr)
+			continue;
 		if (ifa ->ifa_addr->sa_family==AF_INET) { // check it is IP4
 			// is a valid IP4 Address
 

@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -49,10 +49,30 @@ class AnimationPlayerEditor : public VBoxContainer {
 	EditorNode *editor;
 	AnimationPlayer *player;
 
+	enum {
+		TOOL_COPY_ANIM,
+		TOOL_PASTE_ANIM,
+		TOOL_EDIT_RESOURCE
+	};
+
+	enum {
+		ANIM_SAVE,
+		ANIM_SAVE_AS
+	};
+
+	enum {
+		RESOURCE_LOAD,
+		RESOURCE_SAVE
+	};
+
 
 	OptionButton *animation;
 	Button *stop;
 	Button *play;
+	Button *play_from;
+	Button *play_bw;
+	Button *play_bw_from;
+
 //	Button *pause;
 	Button *add_anim;
 	Button *autoplay;
@@ -61,8 +81,10 @@ class AnimationPlayerEditor : public VBoxContainer {
 	Button *edit_anim;
 	Button *resource_edit_anim;
 	Button *load_anim;
+	MenuButton *save_anim;
 	Button *blend_anim;
 	Button *remove_anim;
+	MenuButton *tool_anim;
 	TextureButton *pin;
 	Label *nodename;
 	SpinBox *frame;
@@ -74,7 +96,9 @@ class AnimationPlayerEditor : public VBoxContainer {
 	Ref<Texture> autoplay_icon;
 	bool last_active;
 
-	FileDialog *file;
+	EditorFileDialog *file;
+	AcceptDialog *accept;
+	int current_option;
 
 	struct BlendEditor {
 
@@ -95,6 +119,9 @@ class AnimationPlayerEditor : public VBoxContainer {
 
 	void _select_anim_by_name(const String& p_anim);
 	void _play_pressed();
+	void _play_from_pressed();
+	void _play_bw_pressed();
+	void _play_bw_from_pressed();
 	void _autoplay_pressed();
 	void _stop_pressed();
 	void _pause_pressed();
@@ -103,13 +130,18 @@ class AnimationPlayerEditor : public VBoxContainer {
 	void _animation_rename();
 	void _animation_name_edited();
 	void _animation_load();
+
+	void _animation_save_in_path(const Ref<Resource>& p_resource, const String& p_path);
+	void _animation_save(const Ref<Resource>& p_resource);
+	void _animation_save_as(const Ref<Resource>& p_resource);
+
 	void _animation_remove();
 	void _animation_blend();
 	void _animation_edit();
 	void _animation_duplicate();
 	void _animation_resource_edit();
 	void _scale_changed(const String& p_scale);
-	void _file_selected(String p_file);
+	void _dialog_action(String p_file);
 	void _seek_frame_changed(const String& p_frame);
 	void _seek_value_changed(float p_value);
 	void _blend_editor_next_changed(const String& p_string);
@@ -126,6 +158,9 @@ class AnimationPlayerEditor : public VBoxContainer {
 
 	void _animation_key_editor_seek(float p_pos);
 	void _animation_key_editor_anim_len_changed(float p_new);
+	void _unhandled_key_input(const InputEvent& p_ev);
+	void _animation_tool_menu(int p_option);
+	void _animation_save_menu(int p_option);
 
 	AnimationPlayerEditor();
 protected:
@@ -135,6 +170,10 @@ protected:
 	void _node_removed(Node *p_node);
 	static void _bind_methods();
 public:
+
+	Dictionary get_state() const;
+	void set_state(const Dictionary& p_state);
+
 
 	void ensure_visibility();
 
@@ -151,6 +190,9 @@ class AnimationPlayerEditorPlugin : public EditorPlugin {
 	EditorNode *editor;
 
 public:
+
+	virtual Dictionary get_state() const { return anim_editor->get_state(); }
+	virtual void set_state(const Dictionary& p_state)  { anim_editor->set_state(p_state); }
 
 	virtual String get_name() const { return "Anim"; }
 	bool has_main_screen() const { return false; }

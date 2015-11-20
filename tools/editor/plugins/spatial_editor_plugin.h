@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,6 +32,8 @@
 #include "tools/editor/editor_plugin.h"
 #include "tools/editor/editor_node.h"
 #include "scene/3d/visual_instance.h"
+#include "scene/3d/immediate_geometry.h"
+#include "scene/3d/light.h"
 #include "scene/gui/panel_container.h"
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
@@ -65,7 +67,7 @@ public:
 class SpatialEditorViewport : public Control {
 
 	OBJ_TYPE( SpatialEditorViewport, Control );
-
+friend class SpatialEditor;
 	enum {
 
 		VIEW_TOP,
@@ -75,15 +77,22 @@ class SpatialEditorViewport : public Control {
 		VIEW_FRONT,
 		VIEW_REAR,
 		VIEW_CENTER_TO_SELECTION,
+		VIEW_ALIGN_SELECTION_WITH_VIEW,
 		VIEW_PERSPECTIVE,
 		VIEW_ENVIRONMENT,
-		VIEW_ORTHOGONAL
+		VIEW_ORTHOGONAL,
+		VIEW_AUDIO_LISTENER,
+		VIEW_GIZMOS,
 	};
+public:
 	enum {
-		GIZMO_BASE_LAYER=25
+		GIZMO_BASE_LAYER=27,
+		GIZMO_EDIT_LAYER=26,
+		GIZMO_GRID_LAYER=25
 	};
-
+private:
 	int index;
+	String name;
 	void _menu_option(int p_option);
 	Size2 prev_size;
 
@@ -102,11 +111,21 @@ class SpatialEditorViewport : public Control {
 	bool orthogonal;
 	float gizmo_scale;
 
+	struct _RayResult {
+
+		Spatial* item;
+		float depth;
+		int handle;
+		_FORCE_INLINE_ bool operator<(const _RayResult& p_rr) const { return depth<p_rr.depth; }
+	};
+
+	void _update_name();
 	void _compute_edit(const Point2& p_point);
 	void _clear_selected();
 	void _select_clicked(bool p_append,bool p_single);
 	void _select(Spatial *p_node, bool p_append,bool p_single);
 	ObjectID _select_ray(const Point2& p_pos, bool p_append,bool &r_includes_current,int *r_gizmo_handle=NULL,bool p_alt_select=false);
+	void _find_items_at_pos(const Point2& p_pos,bool &r_includes_current,Vector<_RayResult> &results,bool p_alt_select=false);
 	Vector3 _get_ray_pos(const Vector2& p_pos) const;
 	Vector3 _get_ray(const Vector2& p_pos);
 	Point2 _point_to_screen(const Vector3& p_point);
@@ -126,8 +145,11 @@ class SpatialEditorViewport : public Control {
 	float get_fov() const;
 
 	ObjectID clicked;
+	Vector<_RayResult> selection_results;
 	bool clicked_includes_current;
 	bool clicked_wants_append;
+
+	PopupMenu *selection_menu;
 
 	enum NavigationScheme {
 		NAVIGATION_GODOT,
@@ -135,6 +157,12 @@ class SpatialEditorViewport : public Control {
 		NAVIGATION_MODO,
 	};
 	NavigationScheme _get_navigation_schema(const String& p_property);
+
+	enum NavigationZoomStyle {
+		NAVIGATION_ZOOM_VERTICAL,
+		NAVIGATION_ZOOM_HORIZONTAL
+	};
+	NavigationZoomStyle _get_navigation_zoom_style(const String& p_property);
 
 	enum NavigationMode {
 		NAVIGATION_NONE,
@@ -208,6 +236,9 @@ class SpatialEditorViewport : public Control {
 	void _preview_exited_scene();
 	void _toggle_camera_preview(bool);
 	void _init_gizmo_instance(int p_idx);
+	void _finish_gizmo_instances();
+	void _selection_result_pressed(int);
+	void _selection_menu_hide();
 
 
 protected:
@@ -221,7 +252,8 @@ public:
 	void set_can_preview(Camera* p_preview);
 	void set_state(const Dictionary& p_state);
 	Dictionary get_state() const;
-
+	void reset();
+	Viewport *get_viewport_node() { return viewport; }
 
 
 	SpatialEditorViewport(SpatialEditor *p_spatial_editor,EditorNode *p_editor,int p_index);
@@ -307,6 +339,8 @@ private:
 	RID indicators_instance;	
 	RID cursor_mesh;
 	RID cursor_instance;
+	RID indicator_mat;
+	RID cursor_material;
 
 /*
 	struct Selected {
@@ -341,12 +375,16 @@ private:
 		MENU_TRANSFORM_DIALOG,
 		MENU_VIEW_USE_1_VIEWPORT,
 		MENU_VIEW_USE_2_VIEWPORTS,
+		MENU_VIEW_USE_2_VIEWPORTS_ALT,
 		MENU_VIEW_USE_3_VIEWPORTS,
+		MENU_VIEW_USE_3_VIEWPORTS_ALT,
 		MENU_VIEW_USE_4_VIEWPORTS,
 		MENU_VIEW_USE_DEFAULT_LIGHT,
+		MENU_VIEW_USE_DEFAULT_SRGB,
 		MENU_VIEW_DISPLAY_NORMAL,
 		MENU_VIEW_DISPLAY_WIREFRAME,
 		MENU_VIEW_DISPLAY_OVERDRAW,
+		MENU_VIEW_DISPLAY_SHADELESS,
 		MENU_VIEW_ORIGIN,
 		MENU_VIEW_GRID,
 		MENU_VIEW_CAMERA_SETTINGS,
@@ -376,14 +414,28 @@ private:
 	LineEdit *xform_scale[3];
 	OptionButton *xform_type;
 
-	LineEdit *settings_fov;
-	LineEdit *settings_znear;
-	LineEdit *settings_zfar;
+	VBoxContainer *settings_vbc;
+	SpinBox *settings_fov;
+	SpinBox *settings_znear;
+	SpinBox *settings_zfar;
+	DirectionalLight *settings_dlight;
+	ImmediateGeometry *settings_sphere;
+	Camera *settings_camera;
+	float settings_default_light_rot_x;
+	float settings_default_light_rot_y;
+
+	Control *settings_light_base;
+	Viewport *settings_light_vp;
+	ColorPickerButton *settings_ambient_color;
+	Image settings_light_dir_image;
+
 
 	void _xform_dialog_action();
 	void _menu_item_pressed(int p_option);
 
 	HBoxContainer *hbc_menu;
+
+
 
 //
 //
@@ -414,6 +466,10 @@ private:
 	SpatialEditorGizmos *gizmos;
 	SpatialEditor();
 
+	void _update_ambient_light_color(const Color& p_color);
+	void _update_default_light_angle();
+	void _default_light_angle_input(const InputEvent& p_event);
+
 protected:	
 
 
@@ -430,9 +486,9 @@ public:
 	static SpatialEditor *get_singleton() { return singleton; }
 	void snap_cursor_to_plane(const Plane& p_plane);
 
-	float get_znear() const { return settings_znear->get_text().to_double(); }
-	float get_zfar() const { return settings_zfar->get_text().to_double(); }
-	float get_fov() const { return settings_fov->get_text().to_double(); }
+	float get_znear() const { return settings_znear->get_val(); }
+	float get_zfar() const { return settings_zfar->get_val(); }
+	float get_fov() const { return settings_fov->get_val(); }
 
 	Transform get_gizmo_transform() const { return gizmo.transform; }
 	bool is_gizmo_visible() const { return gizmo.visible; }
@@ -473,8 +529,14 @@ public:
 
 	void set_can_preview(Camera* p_preview);
 
+	SpatialEditorViewport *get_editor_viewport(int p_idx) {
+		ERR_FAIL_INDEX_V(p_idx,4,NULL);
+		return viewports[p_idx];
+	}
+
 	Camera *get_camera() { return NULL; }
 	void edit(Spatial *p_spatial);
+	void clear();
 	SpatialEditor(EditorNode *p_editor);
 	~SpatialEditor();
 };
@@ -500,6 +562,7 @@ public:
 
 	virtual Dictionary get_state() const;
 	virtual void set_state(const Dictionary& p_state);
+	virtual void clear() { spatial_editor->clear(); }
 
 
 	SpatialEditorPlugin(EditorNode *p_node);

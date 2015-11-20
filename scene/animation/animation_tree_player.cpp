@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,6 +29,42 @@
 #include "animation_tree_player.h"
 #include "animation_player.h"
 
+#include "scene/scene_string_names.h"
+
+
+void AnimationTreePlayer::set_animation_process_mode(AnimationProcessMode p_mode) {
+
+	if (animation_process_mode == p_mode)
+		return;
+
+	bool pr = processing;
+	if (pr)
+		_set_process(false);
+	animation_process_mode = p_mode;
+	if (pr)
+		_set_process(true);
+
+}
+
+AnimationTreePlayer::AnimationProcessMode AnimationTreePlayer::get_animation_process_mode() const{
+
+	return animation_process_mode;
+}
+
+void AnimationTreePlayer::_set_process(bool p_process, bool p_force)
+{
+	if (processing == p_process && !p_force)
+		return;
+
+	switch (animation_process_mode) {
+
+	case ANIMATION_PROCESS_FIXED: set_fixed_process(p_process && active); break;
+	case ANIMATION_PROCESS_IDLE: set_process(p_process && active); break;
+	}
+
+	processing = p_process;
+}
+
 
 bool AnimationTreePlayer::_set(const StringName& p_name, const Variant& p_value) {
 
@@ -39,6 +75,11 @@ bool AnimationTreePlayer::_set(const StringName& p_name, const Variant& p_value)
 
 	if (String(p_name)=="master_player") {
 		set_master_player(p_value);
+		return true;
+	}
+
+	if(String(p_name) == SceneStringNames::get_singleton()->playback_active) {
+		set_active(p_value);
 		return true;
 	}
 
@@ -83,7 +124,8 @@ bool AnimationTreePlayer::_set(const StringName& p_name, const Variant& p_value)
 
 		ERR_FAIL_COND_V(nt==NODE_MAX,false);
 
-		add_node(nt,id);
+		if (nt!=NODE_OUTPUT)
+			add_node(nt,id);
 		node_set_pos(id,pos);
 
 
@@ -186,6 +228,11 @@ bool AnimationTreePlayer::_get(const StringName& p_name,Variant &r_ret) const {
 
 	if (String(p_name)=="master_player") {
 		r_ret=master;
+		return true;
+	}
+
+	if (String(p_name) == "playback/active") {
+		r_ret=is_active();
 		return true;
 	}
 
@@ -341,11 +388,24 @@ void AnimationTreePlayer::_get_property_list( List<PropertyInfo> *p_list) const 
 	p_list->push_back( PropertyInfo(Variant::DICTIONARY,"data",PROPERTY_HINT_NONE,"",PROPERTY_USAGE_STORAGE|PROPERTY_USAGE_NETWORK) );
 }
 
+void AnimationTreePlayer::advance(float p_time) {
+
+	_process_animation(p_time);
+}
 
 void AnimationTreePlayer::_notification(int p_what) {
 
 	switch(p_what) {
 
+		case NOTIFICATION_ENTER_TREE: {
+
+			if (!processing) {
+				//make sure that a previous process state was not saved
+				//only process if "processing" is set
+				set_fixed_process(false);
+				set_process(false);
+			}
+		} break;
 		case NOTIFICATION_READY: {
 			dirty_caches=true;
 			if (master!=NodePath()) {
@@ -353,7 +413,19 @@ void AnimationTreePlayer::_notification(int p_what) {
 			}
 		} break;
 		case NOTIFICATION_PROCESS: {
-			_process_animation();
+			if (animation_process_mode==ANIMATION_PROCESS_FIXED)
+				break;
+
+			if (processing)
+				_process_animation( get_process_delta_time() );
+		} break;
+		case NOTIFICATION_FIXED_PROCESS: {
+		
+			if (animation_process_mode==ANIMATION_PROCESS_IDLE)
+				break;
+
+			if (processing)
+				_process_animation(get_fixed_process_delta_time());
 		} break;
 	}
 
@@ -655,10 +727,7 @@ float AnimationTreePlayer::_process_node(const StringName& p_node,AnimationNode 
 }
 
 
-void AnimationTreePlayer::_process_animation() {
-
-	if (!active)
-		return;
+void AnimationTreePlayer::_process_animation(float p_delta) {
 
 	if (last_error!=CONNECT_OK)
 		return;
@@ -674,7 +743,7 @@ void AnimationTreePlayer::_process_animation() {
 		_process_node(out_name,&prev, 1.0, 0, true );
 		reset_request=false;
 	} else
-		_process_node(out_name,&prev, 1.0, get_process_delta_time(), false );
+		_process_node(out_name,&prev, 1.0, p_delta, false );
 
 	if (dirty_caches) {
 		//some animation changed.. ignore this pass
@@ -1046,8 +1115,9 @@ void AnimationTreePlayer::timescale_node_set_scale(const StringName& p_node,floa
 void AnimationTreePlayer::timeseek_node_seek(const StringName& p_node,float p_pos) {
 
 
-//	GET_NODE( NODE_TIMESEEK, TimeSeekNode );
-//hmm
+	GET_NODE( NODE_TIMESEEK, TimeSeekNode );
+	n->seek_pos=p_pos;
+
 }
 void AnimationTreePlayer::transition_node_set_input_count(const StringName& p_node, int p_inputs) {
 
@@ -1518,8 +1588,12 @@ void AnimationTreePlayer::recompute_caches() {
 
 void AnimationTreePlayer::set_active(bool p_active) {
 
-	active=p_active;
-	set_process(active);
+	if (active == p_active)
+		return;
+
+	active = p_active;
+	processing = active;
+	_set_process(processing, true);
 }
 
 bool AnimationTreePlayer::is_active() const {
@@ -1585,7 +1659,7 @@ void AnimationTreePlayer::_update_sources() {
 
 	if (master==NodePath())
 		return;
-	if (!is_inside_scene())
+	if (!is_inside_tree())
 		return;
 
 	Node *m = get_node(master);
@@ -1661,7 +1735,7 @@ void AnimationTreePlayer::_bind_methods() {
 
 	ObjectTypeDB::bind_method(_MD("node_get_type","id"),&AnimationTreePlayer::node_get_type);
 	ObjectTypeDB::bind_method(_MD("node_get_input_count","id"),&AnimationTreePlayer::node_get_input_count);
-	ObjectTypeDB::bind_method(_MD("node_get_input_sourcre","id","idx"),&AnimationTreePlayer::node_get_input_source);
+	ObjectTypeDB::bind_method(_MD("node_get_input_source","id","idx"),&AnimationTreePlayer::node_get_input_source);
 
 	ObjectTypeDB::bind_method(_MD("animation_node_set_animation","id","animation:Animation"),&AnimationTreePlayer::animation_node_set_animation);
 	ObjectTypeDB::bind_method(_MD("animation_node_get_animation:Animation","id"),&AnimationTreePlayer::animation_node_get_animation);
@@ -1736,11 +1810,22 @@ void AnimationTreePlayer::_bind_methods() {
 	ObjectTypeDB::bind_method(_MD("set_base_path","path"),&AnimationTreePlayer::set_base_path);
 	ObjectTypeDB::bind_method(_MD("get_base_path"),&AnimationTreePlayer::get_base_path);
 
+	ObjectTypeDB::bind_method(_MD("set_master_player","nodepath"),&AnimationTreePlayer::set_master_player);
+	ObjectTypeDB::bind_method(_MD("get_master_player"),&AnimationTreePlayer::get_master_player);
+
 	ObjectTypeDB::bind_method(_MD("get_node_list"),&AnimationTreePlayer::_get_node_list);
+
+	ObjectTypeDB::bind_method(_MD("set_animation_process_mode","mode"),&AnimationTreePlayer::set_animation_process_mode);
+	ObjectTypeDB::bind_method(_MD("get_animation_process_mode"),&AnimationTreePlayer::get_animation_process_mode);
+
+	ObjectTypeDB::bind_method(_MD("advance", "delta"), &AnimationTreePlayer::advance);
+
 
 	ObjectTypeDB::bind_method(_MD("reset"),&AnimationTreePlayer::reset);
 
 	ObjectTypeDB::bind_method(_MD("recompute_caches"),&AnimationTreePlayer::recompute_caches);	
+
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "playback/process_mode", PROPERTY_HINT_ENUM, "Fixed,Idle"), _SCS("set_animation_process_mode"), _SCS("get_animation_process_mode"));
 
 	BIND_CONSTANT( NODE_OUTPUT );
 	BIND_CONSTANT( NODE_ANIMATION );
@@ -1762,6 +1847,9 @@ AnimationTreePlayer::AnimationTreePlayer() {
 	out_name="out";
 	out->pos=Point2(40,40);
 	node_map.insert( out_name , out);
+	AnimationProcessMode animation_process_mode;
+	animation_process_mode = ANIMATION_PROCESS_IDLE;
+	processing = false;
 	active=false;
 	dirty_caches=true;
 	reset_request=false;
